@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TimeAligner</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="landing-page">
+  <div class="landing-container">
+    <header>
+      <h1>TimeAligner</h1>
+      <p>회원가입 없이 모임 시간 조율</p>
+    </header>
+
+    <div class="card-grid">
+      <section class="card">
+        <h2>새 방 만들기</h2>
+        <form id="create-form">
+          <label>이름
+            <input type="text" id="create-name" placeholder="홍길동" required maxlength="20">
+          </label>
+          <label>최대 참여 인원
+            <input type="number" id="max-participants" value="20" min="2" max="100">
+          </label>
+          <label>시간대
+            <select id="timezone">
+              <option value="Asia/Seoul" selected>한국 (KST, UTC+9)</option>
+              <option value="Asia/Tokyo">일본 (JST, UTC+9)</option>
+              <option value="UTC">UTC</option>
+              <option value="America/New_York">뉴욕 (ET)</option>
+              <option value="Europe/London">런던 (GMT)</option>
+            </select>
+          </label>
+          <button type="submit" class="btn-primary">방 만들기</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>방 참여하기</h2>
+        <form id="join-form">
+          <label>이름
+            <input type="text" id="join-name" placeholder="홍길동" required maxlength="20">
+          </label>
+          <label>방 코드
+            <input type="text" id="room-code" placeholder="abc123xyz" required maxlength="20" autocomplete="off">
+          </label>
+          <button type="submit" class="btn-secondary">참여하기</button>
+        </form>
+      </section>
+    </div>
+  </div>
+  <script type="module" src="js/index.js"></script>
+</body>
+</html>

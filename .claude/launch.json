@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "timealigner",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "C:\\timealigner\\start_server.bat"],
+      "port": 8000
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TimeAligner</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="room-page">
+  <header class="room-header">
+    <div class="header-left">
+      <h1 id="logo-btn" class="logo-btn">TimeAligner</h1>
+    </div>
+    <div class="header-center">
+      <span class="room-id-label">방 코드</span>
+      <input type="text" id="room-url-input" class="room-url-input" readonly>
+      <button class="btn-copy" id="copy-btn">복사</button>
+    </div>
+    <div class="header-right">
+      <span class="participant-count" id="participant-count">참여자 0명</span>
+      <span class="status-dot" id="status-dot"></span>
+      <button class="btn-leave" id="leave-btn">나가기</button>
+    </div>
+  </header>
+
+  <div class="room-main">
+    <!-- Left: switches between calendar and day-detail -->
+    <div class="main-panel">
+
+      <!-- Calendar view (default) -->
+      <div id="cal-view" class="cal-view-panel">
+        <div class="cal-panel-inner">
+          <!-- Month navigation -->
+          <div class="cal-nav-bar">
+            <button class="cal-nav-btn" id="cal-prev">‹</button>
+            <div class="cal-month-title">
+              <div class="cal-year-disp" id="cal-year-label"></div>
+              <div class="cal-month-disp" id="cal-month-label"></div>
+            </div>
+            <button class="cal-nav-btn" id="cal-next">›</button>
+          </div>
+          <!-- Static week header -->
+          <div class="cal-week-header">
+            <div class="cal-dow-sun">SUN</div>
+            <div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div>
+            <div class="cal-dow-sat">SAT</div>
+          </div>
+          <!-- Date cells (rebuilt each navigation) -->
+          <div class="cal-cells" id="cal-grid"></div>
+        </div>
+      </div>
+
+      <!-- Day detail view -->
+      <div id="detail-view" hidden>
+        <div class="day-nav-bar">
+          <button class="btn-back" id="back-btn">← 달력</button>
+          <span class="current-day-label" id="current-day-label"></span>
+          <div class="day-chips-scroll" id="day-chips"></div>
+        </div>
+        <div class="grid-panel-inner">
+          <div class="grid-header">
+            <div class="legend">
+              <span class="legend-item"><span class="legend-dot me"></span>내 가용 시간</span>
+              <span class="legend-item"><span class="legend-dot other"></span>다른 참여자</span>
+              <span class="legend-item"><span class="legend-dot overlap"></span>겹침</span>
+              <span class="legend-item" style="color:var(--amber)">■ 추천</span>
+              <div class="grid-actions">
+                <button class="btn-grid-action" id="select-all-btn">전체 선택</button>
+                <button class="btn-grid-action" id="deselect-all-btn">전체 해제</button>
+              </div>
+            </div>
+          </div>
+          <div id="time-grid"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right: always-visible sidebar -->
+    <aside class="sidebar">
+      <section class="recommendations-section">
+        <h3>추천 모임 시간</h3>
+        <div id="recommendations" class="recommendations"></div>
+      </section>
+    </aside>
+  </div>
+
+  <script src="js/room.js" type="module"></script>
+</body>
+</html>
