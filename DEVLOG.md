@@ -120,6 +120,15 @@
 3. **전반 UX 트랜지션 개선** — `day-chip`, `cal-cell`, `rec-card`, `btn-back` hover/active 상태 transition 강화 (duration 증가, `translateY`, `scale` 추가)
 4. **개발 환경** — `.claude/launch.json` + `C:\timealigner` junction (한국어 경로 우회) → `preview_start` 연동
 
+### 세션 3
+1. **시간대 구분선** — `grid.js`: 슬롯 12/24/36에 `time-section-start` 클래스 + `data-section` 속성 (`오전`/`오후`/`저녁`). CSS `::before` 의사요소로 라벨 렌더, 보라색 2.5px border로 시각 구분
+2. **드래그 피드백 강화** — 드래그 중 `.is-dragging` 클래스 → crosshair 커서. 셀 토글 시 `cell-toggled` 클래스 + `cell-pop` 키프레임 애니메이션 (scale 0.82→1.06→1, 180ms)
+3. **전체 선택/해제** — `grid.js`에 `selectAll()`/`deselectAll()` 메서드 추가. `room.html` 레전드 옆 `전체 선택`/`전체 해제` 버튼, `room.js`에서 이벤트 연결
+4. **달력 겹침 배지** — 추천 없는 날짜에 `N명 참여` 배지 표시 (`.cal-overlap-badge` pill 스타일). 히트맵 + 배지 조합으로 정보 밀도 향상
+5. **사이드바 카드 개선** — `.rec-rank` pill 배경 추가, `.rec-bar` 두께 4→5px, border-radius 3px
+6. **모바일 사이드바** — `overflow-y: visible` → `auto`, `max-height: 45vh` 추가 → 긴 추천 목록 스크롤 가능
+7. **Git 초기화** — `.gitignore` 생성, git init + 초기 커밋, GitHub push (`hoon67/timealigner`)
+
 ---
 
 ## 남은 고려사항
@@ -150,7 +159,9 @@ timealigner/
 │       ├── room.js      # 방 메인 로직
 │       ├── grid.js      # TimeGrid 클래스
 │       └── ws.js        # WSClient 클래스
+├── .gitignore
 ├── Dockerfile
 ├── docker-compose.yml
-└── run.ps1
+├── run.ps1
+└── start_server.bat
 ```
