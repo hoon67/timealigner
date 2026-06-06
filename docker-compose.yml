@@ -13,4 +13,5 @@ services:
       - redis
     environment:
       - REDIS_URL=redis://redis:6379
+      - REQUIRE_REDIS=true
     restart: unless-stopped

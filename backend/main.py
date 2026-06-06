@@ -73,6 +73,7 @@ async def _pubsub_listener() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _pubsub_task
+    await get_redis()
     _pubsub_task = asyncio.create_task(_pubsub_listener())
     yield
     if _pubsub_task:
@@ -324,6 +325,7 @@ async def ws_endpoint(ws: WebSocket, room_id: str, user_id: str, name: str = "")
     r = await get_redis()
     meta = await r.hgetall(f"room:{room_id}:meta")
     if not meta:
+        await ws.accept()
         await ws.close(code=4004, reason="Room not found")
         return
 
@@ -331,6 +333,7 @@ async def ws_endpoint(ws: WebSocket, room_id: str, user_id: str, name: str = "")
     count = await r.hlen(f"room:{room_id}:names")
     exists = await r.hexists(f"room:{room_id}:names", user_id)
     if not exists and count >= max_p:
+        await ws.accept()
         await ws.close(code=4003, reason="Room full")
         return
 

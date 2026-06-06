@@ -9,7 +9,7 @@
 <body class="room-page">
   <header class="room-header">
     <div class="header-left">
-      <h1 id="logo-btn" class="logo-btn">TimeAligner</h1>
+      <h1 id="logo-btn" class="logo-btn" role="button" tabindex="0" aria-label="방 새로고침">TimeAligner</h1>
     </div>
     <div class="header-center">
       <span class="room-id-label">방 코드</span>
@@ -18,6 +18,7 @@
       <button class="btn-copy" id="copy-link-btn">링크 복사</button>
     </div>
     <div class="header-right">
+      <span class="room-timezone" id="room-timezone">시간대 확인 중</span>
       <span class="participant-count" id="participant-count">참여자 0명</span>
       <span class="status-dot" id="status-dot"></span>
       <button class="btn-leave" id="leave-btn">나가기</button>
@@ -33,12 +34,12 @@
         <div class="cal-panel-inner">
           <!-- Month navigation -->
           <div class="cal-nav-bar">
-            <button class="cal-nav-btn" id="cal-prev">‹</button>
+            <button class="cal-nav-btn" id="cal-prev" aria-label="이전 달">‹</button>
             <div class="cal-month-title">
               <div class="cal-year-disp" id="cal-year-label"></div>
               <div class="cal-month-disp" id="cal-month-label"></div>
             </div>
-            <button class="cal-nav-btn" id="cal-next">›</button>
+            <button class="cal-nav-btn" id="cal-next" aria-label="다음 달">›</button>
           </div>
           <!-- Static week header -->
           <div class="cal-week-header">
@@ -54,7 +55,7 @@
       <!-- Day detail view -->
       <div id="detail-view" hidden>
         <div class="day-nav-bar">
-          <button class="btn-back" id="back-btn">← 달력</button>
+          <button class="btn-back" id="back-btn" aria-label="달력 보기">← 달력</button>
           <span class="current-day-label" id="current-day-label"></span>
           <div class="day-chips-scroll" id="day-chips"></div>
         </div>

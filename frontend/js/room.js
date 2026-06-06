@@ -103,6 +103,7 @@ const recsContainer    = document.getElementById('recommendations');
 const roomUrlInput     = document.getElementById('room-url-input');
 const copyBtn          = document.getElementById('copy-btn');
 const copyLinkBtn      = document.getElementById('copy-link-btn');
+const roomTimezoneEl   = document.getElementById('room-timezone');
 const participantCount = document.getElementById('participant-count');
 const statusDot        = document.getElementById('status-dot');
 
@@ -127,13 +128,21 @@ async function copyText(text, button, defaultText) {
   }
   button.textContent = ok ? '복사됨!' : '실패';
   button.classList.add('copied');
+  if (!ok) alert('복사하지 못했습니다. 방 코드를 직접 선택해서 복사해 주세요.');
   setTimeout(() => { button.textContent = defaultText; button.classList.remove('copied'); }, 2000);
 }
 
 copyBtn.addEventListener('click', () => copyText(roomId, copyBtn, '복사'));
 copyLinkBtn.addEventListener('click', () => copyText(inviteUrl.toString(), copyLinkBtn, '링크 복사'));
 
-document.getElementById('logo-btn').addEventListener('click', () => location.reload());
+const logoBtn = document.getElementById('logo-btn');
+logoBtn.addEventListener('click', () => location.reload());
+logoBtn.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    location.reload();
+  }
+});
 
 // ── Leave button (HTTP DELETE for reliability) ──
 document.getElementById('leave-btn').addEventListener('click', async () => {
@@ -200,6 +209,18 @@ function formatDuration(mins) {
     return rest ? `${hours}시간 ${rest}분` : `${hours}시간`;
   }
   return `${mins}분`;
+}
+
+function formatTimezone(timezone) {
+  const value = timezone || 'UTC';
+  const labels = {
+    'Asia/Seoul': 'KST',
+    'Asia/Tokyo': 'JST',
+    'America/New_York': 'ET',
+    'Europe/London': 'London',
+    UTC: 'UTC',
+  };
+  return `시간대 ${labels[value] || value}`;
 }
 
 function namesPreview(people, emptyText = '없음') {
@@ -451,7 +472,9 @@ function renderFinalizedSlot(slot) {
     </div>`;
 
   document.getElementById('view-finalized-btn').addEventListener('click', () => navigateToSlot(slot));
-  document.getElementById('clear-finalized-btn').addEventListener('click', () => ws?.clearFinalizedSlot());
+  document.getElementById('clear-finalized-btn').addEventListener('click', () => {
+    if (confirm('확정 시간을 해제하시겠습니까?')) ws?.clearFinalizedSlot();
+  });
 }
 
 // ── Recommendations ──
@@ -557,7 +580,7 @@ function renderRecommendations(recs, submittedCount) {
 
       card.querySelector('.btn-finalize').addEventListener('click', (e) => {
         e.stopPropagation();
-        if (!isFinalized) ws?.finalizeSlot(r);
+        if (!isFinalized && confirm(`${r.time_string}으로 확정하시겠습니까?`)) ws?.finalizeSlot(r);
       });
 
       card.addEventListener('click', (e) => {
@@ -603,6 +626,7 @@ function handleMessage(msg) {
     serverState = { participants, names, recommended_slots, meta, submission_status, finalized_slot };
     const total = submission_status?.total_count ?? Object.keys(names).length;
     const submitted = submission_status?.submitted_count ?? Object.keys(participants).length;
+    roomTimezoneEl.textContent = formatTimezone(meta?.timezone);
     participantCount.textContent = `참여자 ${total}명 · 입력 ${submitted}/${total}`;
 
     if (!calView.hidden) {
@@ -629,7 +653,18 @@ function init() {
     onConnect:    () => statusDot.classList.add('connected'),
     onDisconnect: () => statusDot.classList.remove('connected'),
     onMessage:    handleMessage,
-    onNotFound:   () => setTimeout(() => { location.href = '/'; }, 1500),
+    onNotFound:   () => {
+      alert('방을 찾을 수 없습니다. 삭제되었거나 만료된 방일 수 있습니다.');
+      sessionStorage.removeItem(`name:${roomId}`);
+      sessionStorage.removeItem(`userId:${roomId}`);
+      location.href = '/';
+    },
+    onFull:       () => {
+      alert('이 방은 정원이 가득 찼습니다.');
+      sessionStorage.removeItem(`name:${roomId}`);
+      sessionStorage.removeItem(`userId:${roomId}`);
+      location.href = '/';
+    },
   });
 }
 

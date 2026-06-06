@@ -6,6 +6,10 @@ _store = None
 _store_lock = asyncio.Lock()
 
 
+def _env_truthy(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 async def get_redis():
     global _store
     if _store is not None:
@@ -24,8 +28,9 @@ async def get_redis():
             _store = client
             print(f"[store] Redis: {url}")
             return _store
-        except Exception:
-            pass
+        except Exception as exc:
+            if _env_truthy("REQUIRE_REDIS"):
+                raise RuntimeError(f"Redis is required but unavailable: {url}") from exc
 
         # 2) SQLite (persistent)
         try:

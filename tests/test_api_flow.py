@@ -159,6 +159,25 @@ class ApiFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Invalid date", errors[0]["message"])
         self.assertEqual(await self.store.hgetall(f"room:{room_id}:participants"), {})
 
+    async def test_websocket_rejects_join_when_room_is_full(self):
+        room_id = await self.create_room(max_participants=2)
+        await self.store.hset(f"room:{room_id}:names", mapping={"u1": "Kim", "u2": "Lee"})
+
+        ws = FakeWebSocket([])
+
+        await main.ws_endpoint(ws, room_id, "u3", "Park")
+
+        self.assertTrue(ws.accepted)
+        self.assertEqual(ws.closed, {"code": 4003, "reason": "Room full"})
+
+    async def test_websocket_closes_with_code_when_room_is_missing(self):
+        ws = FakeWebSocket([])
+
+        await main.ws_endpoint(ws, "missing-room", "u1", "Kim")
+
+        self.assertTrue(ws.accepted)
+        self.assertEqual(ws.closed, {"code": 4004, "reason": "Room not found"})
+
 
 if __name__ == "__main__":
     unittest.main()

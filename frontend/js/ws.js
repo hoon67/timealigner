@@ -21,6 +21,7 @@ export class WSClient {
     this._ws.onclose = (e) => {
       this.handlers.onDisconnect?.();
       if (e.code === 4004) { this.handlers.onNotFound?.(); return; }
+      if (e.code === 4003) { this.handlers.onFull?.(); return; }
       if (!this._closed && e.code !== 4003) {
         setTimeout(() => this._connect(), this._reconnectDelay);
         this._reconnectDelay = Math.min(this._reconnectDelay * 2, 10000);

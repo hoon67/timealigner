@@ -182,6 +182,13 @@ select option { background: #fff; color: #1a0a2e; }
   box-shadow: 0 4px 16px rgba(120,60,180,0.18), inset 0 1.5px 0 rgba(255,255,255,0.98);
 }
 .btn-copy.copied { color: var(--green); border-color: var(--green); }
+.room-timezone {
+  font-size: 0.7rem; color: rgba(26,10,46,0.58); white-space: nowrap;
+  padding: 0.14rem 0.42rem; border-radius: 999px;
+  background: rgba(255,255,255,0.48);
+  border-top: 1px solid rgba(255,255,255,0.86);
+  border-left: 1px solid rgba(255,255,255,0.55);
+}
 .participant-count { font-size: 0.82rem; color: var(--muted); white-space: nowrap; }
 .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.2); flex-shrink: 0; }
 .status-dot.connected { background: #fb923c; box-shadow: 0 0 8px rgba(251,146,60,0.7); }
@@ -852,6 +859,7 @@ select option { background: #fff; color: #1a0a2e; }
   .room-url-input { width: 100%; min-width: 0; }
   .btn-copy { margin-left: 0; padding: 0.24rem 0.48rem; font-size: 0.7rem; }
   .logo-btn { font-size: 1rem; }
+  .room-timezone { display: none; }
   .participant-count { font-size: 0.7rem; }
   .btn-leave { padding: 0.2rem 0.48rem; font-size: 0.7rem; }
   .rec-reason { display: none; }

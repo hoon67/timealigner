@@ -151,11 +151,20 @@
 5. **추천 개수 정책** — 날짜별 추천 상한을 3개에서 5개로 변경. SQLite fallback 로그에 단일 프로세스 pub/sub 한계를 명시하고 Redis 운영 필요성을 표시
 6. **스토어 초기화 경쟁 수정** — 앱 시작 직후 pubsub listener와 첫 API 요청이 동시에 fallback 스토어를 만들 수 있던 문제를 초기화 락으로 방지. 실제 WebSocket smoke test와 회귀 테스트 추가
 
+### 세션 7
+1. **CI 추가** — GitHub Actions에서 Python 테스트, Python 문법 검사, JS syntax check, whitespace check 실행
+2. **운영 Redis 강제 옵션** — `REQUIRE_REDIS=true` 환경변수 추가. Docker Compose 배포는 Redis unavailable 시 fallback 없이 실패
+3. **정원 초과 UX** — 서버가 WebSocket accept 후 `4003`/`4004` close code를 전달. 프론트는 정원 초과/방 없음 안내, 세션 정리, 홈 이동 처리
+4. **시간대/확정 UX** — 헤더 시간대 표시, 추천 확정/해제 확인, 복사 실패 안내, 만료/삭제된 방 안내 추가
+5. **접근성 보강** — 기호 버튼 `aria-label`, 로고 키보드 조작 추가
+6. **문서화** — README에 실행법, Docker, Redis 운영 옵션, 검증 명령 추가
+7. **브라우저 QA 상태** — Browser 플러그인 `iab` 세션과 로컬 Playwright/Selenium이 없어 실제 시각 QA는 미실행. 서버/API/문법/테스트 검증으로 대체
+
 ---
 
 ## 최근 검증
 
-- `python -m unittest discover -s tests` — 12개 테스트 통과
+- `python -m unittest discover -s tests` — 15개 테스트 통과
 - `python -m py_compile backend\algorithm.py backend\main.py backend\models.py backend\store.py backend\redis_client.py` — Python 문법 확인
 - `node --check frontend\js\room.js`, `node --check frontend\js\ws.js`, `node --check frontend\js\index.js`, `node --check frontend\js\grid.js` — JS 파싱 확인
 - 별도 포트 실제 서버 WebSocket smoke test — fallback 스토어에서도 `state_update` 브로드캐스트 수신 확인
@@ -173,6 +182,9 @@
 
 ```
 timealigner/
+├── .github/
+│   └── workflows/
+│       └── ci.yml       # GitHub Actions CI
 ├── backend/
 │   ├── main.py          # FastAPI 앱, WebSocket 엔드포인트
 │   ├── algorithm.py     # 추천 알고리즘
@@ -194,6 +206,7 @@ timealigner/
 │   ├── test_api_flow.py  # 방 생성/WS/확정 흐름 통합 테스트
 │   └── test_store_init.py # 스토어 초기화 경쟁 회귀 테스트
 ├── .gitignore
+├── README.md
 ├── Dockerfile
 ├── docker-compose.yml
 ├── run.ps1
