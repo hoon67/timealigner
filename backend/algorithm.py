@@ -1,12 +1,13 @@
 from datetime import date as _date
 
+SLOT_MINUTES = 30
 SLOTS = 48
 _WEEKDAYS_KO = ["월", "화", "수", "목", "금", "토", "일"]
 
 
 def slot_to_time(slot: int) -> str:
-    h = (slot * 30) // 60
-    m = (slot * 30) % 60
+    h = (slot * SLOT_MINUTES) // 60
+    m = (slot * SLOT_MINUTES) % 60
     return f"{h:02d}:{m:02d}"
 
 
@@ -23,10 +24,11 @@ _TOP_PER_DATE = 3
 
 def find_best_day_time(
     participants_all: dict[str, dict[str, list[int]]],
+    min_duration_slots: int = 1,
 ) -> list[dict]:
     """Return up to _TOP_PER_DATE recommendations per upcoming date, date ASC.
 
-    Within each date: full attendance first, then by score (count²×duration).
+    Within each date: full attendance first, then by score (count³×duration).
     Past dates are excluded. Each entry carries date_rank (1-based within date)
     and rank (global sequential).
     """
@@ -34,6 +36,11 @@ def find_best_day_time(
     if n == 0:
         return []
 
+    try:
+        min_duration_slots = int(min_duration_slots)
+    except (TypeError, ValueError):
+        min_duration_slots = 1
+    min_duration_slots = max(1, min(SLOTS, min_duration_slots))
     min_required = n // 2 + 1
     today = _date.today()
 
@@ -70,6 +77,9 @@ def find_best_day_time(
 
             guaranteed = min(scores[start:end])
             duration = end - start
+            if duration < min_duration_slots:
+                continue
+
             score = guaranteed ** 3 * duration
             date_entries.append({
                 "date": iso,
@@ -81,6 +91,8 @@ def find_best_day_time(
                 "attendance_count": guaranteed,
                 "attendance_ratio": round(guaranteed / n, 2),
                 "duration_slots": duration,
+                "meeting_duration_slots": min_duration_slots,
+                "meeting_duration_minutes": min_duration_slots * SLOT_MINUTES,
                 "score": score,
             })
 

@@ -10,6 +10,7 @@ document.getElementById('create-form').addEventListener('submit', async (e) => {
   const name = document.getElementById('create-name').value.trim();
   const body = {
     max_participants: +document.getElementById('max-participants').value,
+    meeting_duration_minutes: +document.getElementById('meeting-duration').value,
     timezone: document.getElementById('timezone').value,
   };
 

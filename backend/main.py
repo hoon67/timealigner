@@ -11,13 +11,14 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from algorithm import SLOTS, find_best_day_time
+from algorithm import SLOT_MINUTES, SLOTS, find_best_day_time
 from models import RoomCreate
 from redis_client import close_redis, get_redis
 
 ROOM_TTL = 60 * 60 * 24 * 90  # 90 days
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 _ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+DEFAULT_MEETING_DURATION_MINUTES = 60
 
 
 class ConnectionManager:
@@ -94,22 +95,32 @@ async def _load_participants(r, room_id: str) -> dict[str, dict[str, list[int]]]
     return {k: json.loads(v) for k, v in raw.items()}
 
 
-async def _build_state(r, room_id: str) -> dict:
+def _meeting_duration_slots(meta: dict) -> int:
+    try:
+        minutes = int(meta.get("meeting_duration_minutes", DEFAULT_MEETING_DURATION_MINUTES))
+    except (TypeError, ValueError):
+        minutes = DEFAULT_MEETING_DURATION_MINUTES
+    return max(1, min(SLOTS, (minutes + SLOT_MINUTES - 1) // SLOT_MINUTES))
+
+
+async def _build_state(r, room_id: str, meta: dict | None = None) -> dict:
     participants = await _load_participants(r, room_id)
     names = await r.hgetall(f"room:{room_id}:names")
+    if meta is None:
+        meta = await r.hgetall(f"room:{room_id}:meta")
     return {
         "participants": participants,
         "names": names,
-        "recommended_slots": find_best_day_time(participants),
+        "recommended_slots": find_best_day_time(participants, _meeting_duration_slots(meta)),
     }
 
 
-async def _remove_participant(r, room_id: str, user_id: str) -> dict:
+async def _remove_participant(r, room_id: str, user_id: str, meta: dict | None = None) -> dict:
     pipe = r.pipeline()
     pipe.hdel(f"room:{room_id}:participants", user_id)
     pipe.hdel(f"room:{room_id}:names", user_id)
     await pipe.execute()
-    return await _build_state(r, room_id)
+    return await _build_state(r, room_id, meta)
 
 
 @app.post("/api/rooms")
@@ -119,6 +130,7 @@ async def create_room(data: RoomCreate):
     meta = {
         "timezone": data.timezone,
         "max_participants": str(data.max_participants),
+        "meeting_duration_minutes": str(data.meeting_duration_minutes),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     pipe = r.pipeline()
@@ -134,7 +146,7 @@ async def get_room(room_id: str):
     meta = await r.hgetall(f"room:{room_id}:meta")
     if not meta:
         raise HTTPException(404, "Room not found")
-    state = await _build_state(r, room_id)
+    state = await _build_state(r, room_id, meta)
     return {"room_id": room_id, "meta": meta, **state}
 
 
@@ -145,7 +157,7 @@ async def leave_room(room_id: str, user_id: str):
     meta = await r.hgetall(f"room:{room_id}:meta")
     if not meta:
         raise HTTPException(404, "Room not found")
-    state = await _remove_participant(r, room_id, user_id)
+    state = await _remove_participant(r, room_id, user_id, meta)
     await r.publish(
         f"room:{room_id}:updates",
         json.dumps({"type": "participant_left", "user_id": user_id, **state}),
@@ -177,7 +189,7 @@ async def ws_endpoint(ws: WebSocket, room_id: str, user_id: str, name: str = "")
     await manager.connect(room_id, ws)
 
     try:
-        state = await _build_state(r, room_id)
+        state = await _build_state(r, room_id, meta)
         await ws.send_json({"type": "init", "meta": meta, **state})
 
         async for msg in ws.iter_json():
@@ -203,7 +215,7 @@ async def ws_endpoint(ws: WebSocket, room_id: str, user_id: str, name: str = "")
                 pipe.expire(f"room:{room_id}:participants", ROOM_TTL)
                 await pipe.execute()
 
-                state = await _build_state(r, room_id)
+                state = await _build_state(r, room_id, meta)
                 await r.publish(
                     f"room:{room_id}:updates",
                     json.dumps({"type": "state_update", "updated_by": user_id, **state}),
@@ -212,7 +224,7 @@ async def ws_endpoint(ws: WebSocket, room_id: str, user_id: str, name: str = "")
             elif msg_type == "leave":
                 # Soft leave: keep slot data, drop name
                 await r.hdel(f"room:{room_id}:names", user_id)
-                state = await _build_state(r, room_id)
+                state = await _build_state(r, room_id, meta)
                 await r.publish(
                     f"room:{room_id}:updates",
                     json.dumps({"type": "participant_left", "user_id": user_id, **state}),

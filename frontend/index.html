@@ -23,6 +23,16 @@
           <label>최대 참여 인원
             <input type="number" id="max-participants" value="20" min="2" max="100">
           </label>
+          <label>모임 소요 시간
+            <select id="meeting-duration">
+              <option value="30">30분</option>
+              <option value="60" selected>1시간</option>
+              <option value="90">1시간 30분</option>
+              <option value="120">2시간</option>
+              <option value="180">3시간</option>
+              <option value="240">4시간</option>
+            </select>
+          </label>
           <label>시간대
             <select id="timezone">
               <option value="Asia/Seoul" selected>한국 (KST, UTC+9)</option>

@@ -64,22 +64,36 @@ const currentDayLabel  = document.getElementById('current-day-label');
 const recsContainer    = document.getElementById('recommendations');
 const roomUrlInput     = document.getElementById('room-url-input');
 const copyBtn          = document.getElementById('copy-btn');
+const copyLinkBtn      = document.getElementById('copy-link-btn');
 const participantCount = document.getElementById('participant-count');
 const statusDot        = document.getElementById('status-dot');
 
 roomUrlInput.value = roomId;
-copyBtn.addEventListener('click', async () => {
+const inviteUrl = new URL('/room.html', location.origin);
+inviteUrl.searchParams.set('id', roomId);
+
+async function copyText(text, button, defaultText) {
   let ok = false;
-  try { await navigator.clipboard.writeText(roomId); ok = true; } catch (_) {}
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (_) {}
   if (!ok) {
-    roomUrlInput.select();
+    const fallback = document.createElement('textarea');
+    fallback.value = text;
+    fallback.setAttribute('readonly', '');
+    fallback.style.position = 'fixed';
+    fallback.style.opacity = '0';
+    document.body.appendChild(fallback);
+    fallback.select();
     try { ok = document.execCommand('copy'); } catch (_) {}
+    fallback.remove();
     window.getSelection()?.removeAllRanges();
   }
-  copyBtn.textContent = ok ? '복사됨!' : '실패';
-  copyBtn.classList.add('copied');
-  setTimeout(() => { copyBtn.textContent = '복사'; copyBtn.classList.remove('copied'); }, 2000);
-});
+  button.textContent = ok ? '복사됨!' : '실패';
+  button.classList.add('copied');
+  setTimeout(() => { button.textContent = defaultText; button.classList.remove('copied'); }, 2000);
+}
+
+copyBtn.addEventListener('click', () => copyText(roomId, copyBtn, '복사'));
+copyLinkBtn.addEventListener('click', () => copyText(inviteUrl.toString(), copyLinkBtn, '링크 복사'));
 
 document.getElementById('logo-btn').addEventListener('click', () => location.reload());
 
@@ -104,7 +118,7 @@ const calMonthLabel = document.getElementById('cal-month-label');
 // ── State ──
 let grid = null;
 let ws   = null;
-let serverState = { participants: {}, names: {}, recommended_slots: [] };
+let serverState = { participants: {}, names: {}, recommended_slots: [], meta: {} };
 let currentDate = toISO(TODAY);
 let calMonthOffset = 0; // -1 to +6 relative to current month
 
@@ -122,6 +136,15 @@ function hasDataForDate(participants, dateStr) {
 
 function overlapCount(participants, dateStr) {
   return Object.values(participants).filter(d => d[dateStr]?.some(v => v === 1)).length;
+}
+
+function formatDuration(mins) {
+  if (mins >= 60) {
+    const hours = Math.floor(mins / 60);
+    const rest = mins % 60;
+    return rest ? `${hours}시간 ${rest}분` : `${hours}시간`;
+  }
+  return `${mins}분`;
 }
 
 // ── Calendar nav helpers ──
@@ -189,7 +212,7 @@ function buildCalGrid(participants, recs) {
     let recHtml = '';
     if (topRec) {
       const mins = topRec.duration_slots * 30;
-      const durStr = mins >= 60 ? `${mins / 60}h` : `${mins}m`;
+      const durStr = formatDuration(mins);
       recHtml = `<span class="cal-cell-time">${topRec.start_time}~${topRec.end_time}</span>
                  <span class="cal-cell-att">${topRec.attendance_count}/${n}명 · ${durStr}</span>`;
     } else if (cnt > 0) {
@@ -286,7 +309,8 @@ function highlightRecForDate(dateStr) {
 function renderRecommendations(recs, n) {
   recsContainer.innerHTML = '';
   if (!recs?.length) {
-    recsContainer.innerHTML = '<p class="no-recs">과반 이상 겹치는 시간 없음</p>';
+    const mins = +(serverState.meta?.meeting_duration_minutes || 60);
+    recsContainer.innerHTML = `<p class="no-recs">${formatDuration(mins)} 이상 과반 겹침 없음</p>`;
     return;
   }
 
@@ -368,7 +392,8 @@ function renderRecommendations(recs, n) {
     for (const r of slots) {
       const pct    = Math.round(r.attendance_ratio * 100);
       const mins   = r.duration_slots * 30;
-      const durStr = mins >= 60 ? `${mins / 60}시간` : `${mins}분`;
+      const durStr = formatDuration(mins);
+      const needStr = formatDuration(r.meeting_duration_minutes || +(serverState.meta?.meeting_duration_minutes || 60));
       const card   = document.createElement('div');
       card.className = `stack-card rec-card${r.date_rank === 1 ? ' top' : ''}`;
       card.innerHTML = `
@@ -376,7 +401,7 @@ function renderRecommendations(recs, n) {
           <span class="rec-rank">#${r.date_rank}</span>
           <div class="rec-time">${r.start_time}~${r.end_time}</div>
         </div>
-        <div class="rec-meta">${r.attendance_count}/${n}명 (${pct}%) · ${durStr}</div>
+        <div class="rec-meta">${r.attendance_count}/${n}명 (${pct}%) · ${durStr} 가능 · ${needStr} 필요</div>
         <div class="rec-bar"><div class="rec-bar-fill" style="width:${pct}%"></div></div>`;
 
       card.addEventListener('click', (e) => {
@@ -398,10 +423,10 @@ function renderRecommendations(recs, n) {
 
 // ── WebSocket message handler ──
 function handleMessage(msg) {
-  const { type, participants = {}, names = {}, recommended_slots = [] } = msg;
+  const { type, participants = {}, names = {}, recommended_slots = [], meta = serverState.meta } = msg;
 
   if (['init', 'state_update', 'participant_left'].includes(type)) {
-    serverState = { participants, names, recommended_slots };
+    serverState = { participants, names, recommended_slots, meta };
     const n = Object.keys(participants).length;
     participantCount.textContent = `참여자 ${n}명`;
 
