@@ -141,6 +141,16 @@
 3. **최종 시간 확정** — 추천 카드에서 시간 확정, 확정 시간 사이드바 고정 표시, 보기/해제 액션 및 달력/그리드 하이라이트 연동
 4. **통합 테스트** — 메모리 스토어 + 가짜 WebSocket으로 방 생성, 슬롯 제출, 추천 이유, 확정/해제 흐름 검증
 5. **모바일 헤더 QA** — 390px viewport에서 방 코드 입력/복사/링크 복사 버튼이 viewport 안에 유지되는지 확인
+6. **GitHub 반영** — `c31c768 feat: add scheduling decision workflow` 커밋 후 `origin/master` 푸시 완료
+
+---
+
+## 최근 검증
+
+- `python -m unittest discover -s tests` — 9개 테스트 통과
+- `python -m py_compile backend\algorithm.py backend\main.py backend\models.py` — Python 문법 확인
+- `node --check frontend\js\room.js`, `node --check frontend\js\ws.js` — JS 파싱 확인
+- `git diff --check` — whitespace 문제 없음
 
 ---
 
@@ -171,6 +181,9 @@ timealigner/
 │       ├── room.js      # 방 메인 로직
 │       ├── grid.js      # TimeGrid 클래스
 │       └── ws.js        # WSClient 클래스
+├── tests/
+│   ├── test_algorithm.py # 추천 알고리즘 단위 테스트
+│   └── test_api_flow.py  # 방 생성/WS/확정 흐름 통합 테스트
 ├── .gitignore
 ├── Dockerfile
 ├── docker-compose.yml
