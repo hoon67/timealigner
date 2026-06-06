@@ -75,17 +75,29 @@ class RecommendationTests(unittest.TestCase):
         self.assertEqual(recs[1]["start_slot"], 20)
         self.assertEqual(recs[1]["date_rank"], 2)
 
-    def test_limits_recommendations_to_three_per_date(self):
+    def test_limits_recommendations_to_five_per_date(self):
         target = (date.today() + timedelta(days=1)).isoformat()
         participants = {
-            "a": {target: slots((2, 3), (6, 7), (10, 11), (14, 15))},
-            "b": {target: slots((2, 3), (6, 7), (10, 11), (14, 15))},
+            "a": {target: slots((2, 3), (6, 7), (10, 11), (14, 15), (18, 19), (22, 23))},
+            "b": {target: slots((2, 3), (6, 7), (10, 11), (14, 15), (18, 19), (22, 23))},
         }
 
         recs = find_best_day_time(participants)
 
-        self.assertEqual(len(recs), 3)
-        self.assertEqual([r["date_rank"] for r in recs], [1, 2, 3])
+        self.assertEqual(len(recs), 5)
+        self.assertEqual([r["date_rank"] for r in recs], [1, 2, 3, 4, 5])
+
+    def test_ignores_malformed_stored_dates(self):
+        future = (date.today() + timedelta(days=1)).isoformat()
+        participants = {
+            "a": {"2026-99-99": slots((2, 3)), future: slots((8, 10))},
+            "b": {future: slots((8, 10))},
+        }
+
+        recs = find_best_day_time(participants)
+
+        self.assertEqual(len(recs), 1)
+        self.assertEqual(recs[0]["date"], future)
 
     def test_filters_recommendations_shorter_than_min_duration(self):
         target = (date.today() + timedelta(days=1)).isoformat()

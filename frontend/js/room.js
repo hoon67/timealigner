@@ -11,23 +11,57 @@ let userName = sessionStorage.getItem(`name:${roomId}`);
 // ── Date helpers ──
 const MONTHS_EN = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
                    'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
-const DOW_EN  = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
 const DOW_KO  = ['일','월','화','수','목','금','토'];
 
-function toISO(d) { return d.toISOString().slice(0, 10); }
+function toISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 
-const TODAY = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
-
-// Calendar range: 1st of (today - 1 month) to last day of (today + 6 months)
-const CAL_START = new Date(TODAY.getFullYear(), TODAY.getMonth() - 1, 1);
-const CAL_END   = new Date(TODAY.getFullYear(), TODAY.getMonth() + 7, 0);
-
-// ALL_DATES for day chips in detail view
-const ALL_DATES = [];
-for (let d = new Date(CAL_START); d <= CAL_END; d = addDays(d, 1)) {
-  ALL_DATES.push(toISO(d));
+function localToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
+
+function todayInTimezone(timezone) {
+  if (!timezone) return localToday();
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const part = (type) => parts.find((p) => p.type === type)?.value;
+    const year = part('year');
+    const month = part('month');
+    const day = part('day');
+    if (!year || !month || !day) return localToday();
+    return new Date(+year, +month - 1, +day);
+  } catch (_) {
+    return localToday();
+  }
+}
+
+let roomTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+let TODAY = null;
+let CAL_START = null;
+let CAL_END = null;
+const ALL_DATES = [];
+
+function rebuildDateRange(timezone = roomTimezone) {
+  roomTimezone = timezone || roomTimezone;
+  TODAY = todayInTimezone(roomTimezone);
+  // Calendar range: 1st of (today - 1 month) to last day of (today + 6 months)
+  CAL_START = new Date(TODAY.getFullYear(), TODAY.getMonth() - 1, 1);
+  CAL_END   = new Date(TODAY.getFullYear(), TODAY.getMonth() + 7, 0);
+  ALL_DATES.length = 0;
+  for (let d = new Date(CAL_START); d <= CAL_END; d = addDays(d, 1)) {
+    ALL_DATES.push(toISO(d));
+  }
+}
+rebuildDateRange();
 
 // ── Modal ──
 function showNameModal(cb) {
@@ -36,16 +70,17 @@ function showNameModal(cb) {
   overlay.innerHTML = `
     <div class="modal">
       <h2>TimeAligner</h2>
-      <p>방 코드: <strong>${roomId}</strong></p>
+      <p>방 코드: <strong id="modal-room-id"></strong></p>
       <form id="name-form">
         <label>이름<input type="text" id="modal-name" placeholder="홍길동" required maxlength="20" autofocus></label>
         <button type="submit" class="btn-primary">참여하기</button>
       </form>
     </div>`;
   document.body.appendChild(overlay);
-  document.getElementById('name-form').addEventListener('submit', (e) => {
+  overlay.querySelector('#modal-room-id').textContent = roomId;
+  overlay.querySelector('#name-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    userName = document.getElementById('modal-name').value.trim();
+    userName = overlay.querySelector('#modal-name').value.trim();
     userId = crypto.randomUUID();
     sessionStorage.setItem(`name:${roomId}`, userName);
     sessionStorage.setItem(`userId:${roomId}`, userId);
@@ -104,7 +139,7 @@ document.getElementById('logo-btn').addEventListener('click', () => location.rel
 document.getElementById('leave-btn').addEventListener('click', async () => {
   if (!confirm('참석자 목록에서 완전히 제거됩니다.\n입력한 가용 시간도 삭제됩니다. 나가시겠습니까?')) return;
   try {
-    await fetch(`/api/rooms/${roomId}/participants/${userId}`, { method: 'DELETE' });
+    await fetch(`/api/rooms/${encodeURIComponent(roomId)}/participants/${encodeURIComponent(userId)}`, { method: 'DELETE' });
   } catch (_) {}
   if (ws) { ws._closed = true; ws._ws?.close(); }
   sessionStorage.removeItem(`name:${roomId}`);
@@ -249,13 +284,15 @@ function buildCalGrid(participants, recs) {
 
     let recHtml = '';
     if (isFinalized) {
+      const finalizedBase = finalized.submitted_count ?? Object.keys(serverState.participants).length;
       recHtml = `<span class="cal-cell-time">확정 ${finalized.start_time}~${finalized.end_time}</span>
-                 <span class="cal-cell-att">${finalized.attendance_count}/${Object.keys(serverState.names).length}명 가능</span>`;
+                 <span class="cal-cell-att">입력 ${finalized.attendance_count}/${finalizedBase}명 가능</span>`;
     } else if (topRec) {
       const mins = topRec.duration_slots * 30;
       const durStr = formatDuration(mins);
+      const submittedBase = topRec.submitted_count ?? n;
       recHtml = `<span class="cal-cell-time">${topRec.start_time}~${topRec.end_time}</span>
-                 <span class="cal-cell-att">${topRec.attendance_count}/${n}명 · ${durStr}</span>`;
+                 <span class="cal-cell-att">입력 ${topRec.attendance_count}/${submittedBase}명 · ${durStr}</span>`;
     } else if (cnt > 0) {
       recHtml = `<span class="cal-overlap-badge">${cnt}명 참여</span>`;
     }
@@ -387,11 +424,13 @@ function renderFinalizedSlot(slot) {
   }
 
   finalizedSection.hidden = false;
+  const submittedBase = slot.submitted_count ?? Object.keys(serverState.participants).length;
+  const pendingText = slot.pending_count ? ` · ${slot.pending_count}명 대기` : '';
   finalizedSlotEl.innerHTML = `
     <div class="finalized-card">
       <div class="finalized-time">${escapeHTML(slot.time_string)}</div>
       <div class="finalized-meta">
-        ${slot.attendance_count}/${Object.keys(serverState.names).length}명 가능 · ${formatDuration(slot.duration_minutes)}
+        입력자 기준 ${slot.attendance_count}/${submittedBase}명 가능 · ${formatDuration(slot.duration_minutes)}${pendingText}
       </div>
       <div class="people-block">
         <span class="people-label">가능</span>
@@ -400,6 +439,10 @@ function renderFinalizedSlot(slot) {
       <div class="people-block">
         <span class="people-label">불가</span>
         <span>${namesPreview(slot.unavailable, '없음')}</span>
+      </div>
+      <div class="people-block">
+        <span class="people-label">대기</span>
+        <span>${namesPreview(slot.pending, '없음')}</span>
       </div>
       <div class="finalized-actions">
         <button class="btn-grid-action" id="view-finalized-btn">보기</button>
@@ -412,7 +455,7 @@ function renderFinalizedSlot(slot) {
 }
 
 // ── Recommendations ──
-function renderRecommendations(recs, n) {
+function renderRecommendations(recs, submittedCount) {
   recsContainer.innerHTML = '';
   if (!recs?.length) {
     const mins = +(serverState.meta?.meeting_duration_minutes || 60);
@@ -493,6 +536,8 @@ function renderRecommendations(recs, n) {
       const mins   = r.duration_slots * 30;
       const durStr = formatDuration(mins);
       const needStr = formatDuration(r.meeting_duration_minutes || +(serverState.meta?.meeting_duration_minutes || 60));
+      const submittedBase = r.submitted_count ?? submittedCount;
+      const pendingText = r.pending_count ? ` · ${r.pending_count}명 대기` : '';
       const card   = document.createElement('div');
       const isFinalized = isSameSlot(r, serverState.finalized_slot);
       card.className = `stack-card rec-card${r.date_rank === 1 ? ' top' : ''}${isFinalized ? ' finalized-rec' : ''}`;
@@ -502,10 +547,11 @@ function renderRecommendations(recs, n) {
           <div class="rec-time">${r.start_time}~${r.end_time}</div>
           <button class="btn-finalize" type="button">${isFinalized ? '확정됨' : '확정'}</button>
         </div>
-        <div class="rec-meta">${r.attendance_count}/${n}명 (${pct}%) · ${durStr} 가능 · ${needStr} 필요</div>
+        <div class="rec-meta">입력자 기준 ${r.attendance_count}/${submittedBase}명 (${pct}%) · ${durStr} 가능 · ${needStr} 필요${pendingText}</div>
         <div class="rec-reason">
           <div><strong>가능</strong><span>${namesPreview(r.available, '없음')}</span></div>
           <div><strong>불가</strong><span>${namesPreview(r.unavailable, '없음')}</span></div>
+          <div><strong>대기</strong><span>${namesPreview(r.pending, '없음')}</span></div>
         </div>
         <div class="rec-bar"><div class="rec-bar-fill" style="width:${pct}%"></div></div>`;
 
@@ -544,6 +590,16 @@ function handleMessage(msg) {
   } = msg;
 
   if (['init', 'state_update', 'participant_left', 'finalized_slot_update'].includes(type)) {
+    const previousToday = toISO(TODAY);
+    const nextTimezone = meta?.timezone || roomTimezone;
+    let dateRangeChanged = false;
+    if (nextTimezone !== roomTimezone) {
+      const wasShowingToday = currentDate === previousToday;
+      rebuildDateRange(nextTimezone);
+      if (wasShowingToday) currentDate = toISO(TODAY);
+      dateRangeChanged = true;
+    }
+
     serverState = { participants, names, recommended_slots, meta, submission_status, finalized_slot };
     const total = submission_status?.total_count ?? Object.keys(names).length;
     const submitted = submission_status?.submitted_count ?? Object.keys(participants).length;
@@ -552,7 +608,12 @@ function handleMessage(msg) {
     if (!calView.hidden) {
       buildCalGrid(participants, recommended_slots);
     } else {
-      updateChipStates();
+      if (dateRangeChanged) {
+        buildDayChips();
+        scrollActiveChip();
+      } else {
+        updateChipStates();
+      }
       grid?.updateAll(getDayView(participants, currentDate), names);
       highlightRecForDate(currentDate);
     }

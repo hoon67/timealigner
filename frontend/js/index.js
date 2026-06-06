@@ -2,7 +2,9 @@ function goToRoom(roomId, name) {
   const userId = crypto.randomUUID();
   sessionStorage.setItem(`name:${roomId}`, name);
   sessionStorage.setItem(`userId:${roomId}`, userId);
-  location.href = `/room.html?id=${roomId}`;
+  const url = new URL('/room.html', location.origin);
+  url.searchParams.set('id', roomId);
+  location.href = url.toString();
 }
 
 document.getElementById('create-form').addEventListener('submit', async (e) => {
@@ -44,7 +46,7 @@ document.getElementById('join-form').addEventListener('submit', async (e) => {
   btn.textContent = '확인 중…';
 
   try {
-    const res = await fetch(`/api/rooms/${roomId}`);
+    const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}`);
     if (res.status === 404) throw new Error('존재하지 않는 방 코드입니다');
     if (!res.ok) throw new Error(await res.text());
     goToRoom(roomId, name);

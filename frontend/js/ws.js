@@ -12,7 +12,9 @@ export class WSClient {
 
   _connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${proto}://${location.host}/ws/${this.roomId}/${this.userId}?name=${encodeURIComponent(this.name || '')}`;
+    const roomPath = encodeURIComponent(this.roomId);
+    const userPath = encodeURIComponent(this.userId);
+    const url = `${proto}://${location.host}/ws/${roomPath}/${userPath}?name=${encodeURIComponent(this.name || '')}`;
     this._ws = new WebSocket(url);
     this._ws.onopen = () => { this._reconnectDelay = 1000; this.handlers.onConnect?.(); };
     this._ws.onmessage = (e) => { try { this.handlers.onMessage?.(JSON.parse(e.data)); } catch (_) {} };

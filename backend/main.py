@@ -5,8 +5,8 @@ import secrets
 from contextlib import asynccontextmanager
 from datetime import date as _date, datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import redis.asyncio as aioredis
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -123,6 +123,24 @@ def _is_available_for_range(
     return bool(slots and len(slots) == SLOTS and all(slots[t] == 1 for t in range(start_slot, end_slot)))
 
 
+def _parse_iso_date(date_str: str) -> _date:
+    if not isinstance(date_str, str) or not _ISO_RE.match(date_str):
+        raise ValueError("Invalid date (expected YYYY-MM-DD)")
+    try:
+        return _date.fromisoformat(date_str)
+    except ValueError as exc:
+        raise ValueError("Invalid date") from exc
+
+
+def _today_for_meta(meta: dict) -> _date:
+    tz_name = meta.get("timezone") or "UTC"
+    try:
+        tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        tz = timezone.utc
+    return datetime.now(tz).date()
+
+
 def _slot_people(
     participants: dict[str, dict[str, list[int]]],
     names: dict[str, str],
@@ -137,17 +155,20 @@ def _slot_people(
     for user_id in sorted(names, key=lambda uid: names.get(uid, "").casefold()):
         person = _person(user_id, names)
         submitted = _has_submission(participants.get(user_id))
-        if _is_available_for_range(participants.get(user_id), date_str, start_slot, end_slot):
+        if not submitted:
+            pending.append(person)
+        elif _is_available_for_range(participants.get(user_id), date_str, start_slot, end_slot):
             available.append(person)
         else:
             unavailable.append(person)
-            if not submitted:
-                pending.append(person)
 
     return {
         "available": available,
         "unavailable": unavailable,
         "pending": pending,
+        "submitted_count": len(available) + len(unavailable),
+        "pending_count": len(pending),
+        "total_count": len(names),
         "available_names": [p["name"] for p in available],
         "unavailable_names": [p["name"] for p in unavailable],
         "pending_names": [p["name"] for p in pending],
@@ -203,6 +224,7 @@ def _finalized_slot(meta: dict, participants: dict[str, dict[str, list[int]]], n
 
     people = _slot_people(participants, names, date_str, start_slot, end_slot)
     duration_slots = end_slot - start_slot
+    submitted_count = people["submitted_count"]
     return {
         **slot,
         "date": date_str,
@@ -214,16 +236,14 @@ def _finalized_slot(meta: dict, participants: dict[str, dict[str, list[int]]], n
         "duration_slots": duration_slots,
         "duration_minutes": duration_slots * SLOT_MINUTES,
         "attendance_count": len(people["available"]),
-        "attendance_ratio": round(len(people["available"]) / len(names), 2) if names else 0,
+        "attendance_ratio": round(len(people["available"]) / submitted_count, 2) if submitted_count else 0,
         **people,
     }
 
 
 def _parse_slot_range(date_str: str, start_slot, end_slot) -> tuple[str, int, int]:
-    if not _ISO_RE.match(date_str):
-        raise ValueError("Invalid date (expected YYYY-MM-DD)")
     try:
-        _date.fromisoformat(date_str)
+        _parse_iso_date(date_str)
         start = int(start_slot)
         end = int(end_slot)
     except (TypeError, ValueError) as exc:
@@ -238,7 +258,7 @@ async def _build_state(r, room_id: str, meta: dict | None = None) -> dict:
     names = await r.hgetall(f"room:{room_id}:names")
     if meta is None:
         meta = await r.hgetall(f"room:{room_id}:meta")
-    recs = find_best_day_time(participants, _meeting_duration_slots(meta))
+    recs = find_best_day_time(participants, _meeting_duration_slots(meta), today=_today_for_meta(meta))
     return {
         "meta": meta,
         "participants": participants,
@@ -333,8 +353,10 @@ async def ws_endpoint(ws: WebSocket, room_id: str, user_id: str, name: str = "")
                 date_str = msg.get("date", "")
                 slots = msg.get("slots", [])
 
-                if not _ISO_RE.match(date_str):
-                    await ws.send_json({"type": "error", "message": "Invalid date (expected YYYY-MM-DD)"})
+                try:
+                    _parse_iso_date(date_str)
+                except ValueError as exc:
+                    await ws.send_json({"type": "error", "message": str(exc)})
                     continue
                 if len(slots) != SLOTS or not all(v in (0, 1) for v in slots):
                     await ws.send_json({"type": "error", "message": f"Invalid slots: {SLOTS}-element binary array"})

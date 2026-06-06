@@ -40,7 +40,7 @@
 - 과거 날짜 제외 (`_date.today()` 기준)
 - 점수: `guaranteed³ × duration` (세제곱 참석률 민감도)
 - 전참(full attendance) 먼저, 그 다음 부분참석 순
-- 날짜별 최대 `_TOP_PER_DATE = 3`개 추천
+- 날짜별 최대 `_TOP_PER_DATE = 5`개 추천
 - 날짜 오름차순 정렬 후 반환
 
 ---
@@ -143,21 +143,29 @@
 5. **모바일 헤더 QA** — 390px viewport에서 방 코드 입력/복사/링크 복사 버튼이 viewport 안에 유지되는지 확인
 6. **GitHub 반영** — `c31c768 feat: add scheduling decision workflow` 커밋 후 `origin/master` 푸시 완료
 
+### 세션 6
+1. **방 코드 XSS 방어** — URL 쿼리의 방 코드를 모달 HTML에 직접 삽입하지 않고 `textContent`로 렌더링. API/WS 경로는 `encodeURIComponent` 적용
+2. **날짜 검증 보강** — WebSocket 슬롯 업데이트에서 실제 ISO 날짜 파싱까지 검증. 기존 저장 데이터에 잘못된 날짜가 있어도 추천 알고리즘이 건너뜀
+3. **추천 기준 명확화** — 미입력자는 `불가`가 아닌 `대기`로 분리. 추천/확정 문구는 `입력자 기준`으로 표시
+4. **시간대 반영** — 방 메타의 `timezone` 기준으로 서버 추천의 오늘/과거 제외를 계산. 프론트 달력도 방 시간대 기준의 오늘과 날짜 범위를 사용
+5. **추천 개수 정책** — 날짜별 추천 상한을 3개에서 5개로 변경. SQLite fallback 로그에 단일 프로세스 pub/sub 한계를 명시하고 Redis 운영 필요성을 표시
+6. **스토어 초기화 경쟁 수정** — 앱 시작 직후 pubsub listener와 첫 API 요청이 동시에 fallback 스토어를 만들 수 있던 문제를 초기화 락으로 방지. 실제 WebSocket smoke test와 회귀 테스트 추가
+
 ---
 
 ## 최근 검증
 
-- `python -m unittest discover -s tests` — 9개 테스트 통과
-- `python -m py_compile backend\algorithm.py backend\main.py backend\models.py` — Python 문법 확인
-- `node --check frontend\js\room.js`, `node --check frontend\js\ws.js` — JS 파싱 확인
+- `python -m unittest discover -s tests` — 12개 테스트 통과
+- `python -m py_compile backend\algorithm.py backend\main.py backend\models.py backend\store.py backend\redis_client.py` — Python 문법 확인
+- `node --check frontend\js\room.js`, `node --check frontend\js\ws.js`, `node --check frontend\js\index.js`, `node --check frontend\js\grid.js` — JS 파싱 확인
+- 별도 포트 실제 서버 WebSocket smoke test — fallback 스토어에서도 `state_update` 브로드캐스트 수신 확인
 - `git diff --check` — whitespace 문제 없음
 
 ---
 
 ## 남은 고려사항
 
-- `_TOP_PER_DATE = 3` (요청은 5순위였으나 스택 UI상 3이 자연스러움 — 추후 조정 가능)
-- SQLite pubsub은 단일 서버에서만 동작 (다중 인스턴스 시 Redis 필수)
+- SQLite pubsub은 단일 서버에서만 동작 (다중 인스턴스 운영 시 Redis 필수)
 
 ---
 
@@ -183,7 +191,8 @@ timealigner/
 │       └── ws.js        # WSClient 클래스
 ├── tests/
 │   ├── test_algorithm.py # 추천 알고리즘 단위 테스트
-│   └── test_api_flow.py  # 방 생성/WS/확정 흐름 통합 테스트
+│   ├── test_api_flow.py  # 방 생성/WS/확정 흐름 통합 테스트
+│   └── test_store_init.py # 스토어 초기화 경쟁 회귀 테스트
 ├── .gitignore
 ├── Dockerfile
 ├── docker-compose.yml

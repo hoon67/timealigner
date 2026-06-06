@@ -19,12 +19,13 @@ def date_label(iso: str) -> str:
         return iso
 
 
-_TOP_PER_DATE = 3
+_TOP_PER_DATE = 5
 
 
 def find_best_day_time(
     participants_all: dict[str, dict[str, list[int]]],
     min_duration_slots: int = 1,
+    today: _date | None = None,
 ) -> list[dict]:
     """Return up to _TOP_PER_DATE recommendations per upcoming date, date ASC.
 
@@ -42,12 +43,15 @@ def find_best_day_time(
         min_duration_slots = 1
     min_duration_slots = max(1, min(SLOTS, min_duration_slots))
     min_required = n // 2 + 1
-    today = _date.today()
+    today = today or _date.today()
 
-    all_dates = sorted(
-        iso for days_data in participants_all.values() for iso in days_data
-        if _date.fromisoformat(iso) >= today
-    )
+    all_dates = []
+    for days_data in participants_all.values():
+        for iso in days_data:
+            parsed = _parse_iso_date(iso)
+            if parsed and parsed >= today:
+                all_dates.append(iso)
+    all_dates = sorted(all_dates)
     # deduplicate while preserving order
     seen: set[str] = set()
     all_dates = [d for d in all_dates if not (d in seen or seen.add(d))]  # type: ignore[func-returns-value]
@@ -108,3 +112,10 @@ def find_best_day_time(
             results.append(entry)
 
     return results
+
+
+def _parse_iso_date(iso: str) -> _date | None:
+    try:
+        return _date.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return None

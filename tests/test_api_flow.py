@@ -129,17 +129,35 @@ class ApiFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(state_update["recommended_slots"]), 1)
         rec = state_update["recommended_slots"][0]
         self.assertEqual(rec["available_names"], ["Kim"])
-        self.assertEqual(rec["unavailable_names"], ["Lee"])
+        self.assertEqual(rec["unavailable_names"], [])
         self.assertEqual(rec["pending_names"], ["Lee"])
+        self.assertEqual(rec["submitted_count"], 1)
+        self.assertEqual(rec["pending_count"], 1)
 
         finalized_updates = [msg for msg in ws.sent if msg.get("type") == "finalized_slot_update"]
         self.assertEqual(len(finalized_updates), 2)
         finalized = finalized_updates[0]["finalized_slot"]
         self.assertEqual(finalized["date"], target)
         self.assertEqual(finalized["available_names"], ["Kim"])
-        self.assertEqual(finalized["unavailable_names"], ["Lee"])
+        self.assertEqual(finalized["unavailable_names"], [])
+        self.assertEqual(finalized["pending_names"], ["Lee"])
         self.assertEqual(finalized["finalized_by_name"], "Kim")
         self.assertIsNone(finalized_updates[1]["finalized_slot"])
+
+    async def test_websocket_rejects_malformed_dates(self):
+        room_id = await self.create_room()
+
+        ws = FakeWebSocket([
+            {"type": "update_slots", "date": "2026-99-99", "slots": slots((20, 24))},
+        ])
+
+        await main.ws_endpoint(ws, room_id, "u1", "Kim")
+
+        self.assertTrue(ws.accepted)
+        errors = [msg for msg in ws.sent if msg.get("type") == "error"]
+        self.assertEqual(len(errors), 1)
+        self.assertIn("Invalid date", errors[0]["message"])
+        self.assertEqual(await self.store.hgetall(f"room:{room_id}:participants"), {})
 
 
 if __name__ == "__main__":
