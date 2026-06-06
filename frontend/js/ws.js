@@ -29,6 +29,15 @@ export class WSClient {
 
   // date: ISO string "YYYY-MM-DD"
   sendSlots(date, slots) { this._send({ type: 'update_slots', date, slots }); }
+  finalizeSlot(slot) {
+    this._send({
+      type: 'finalize_slot',
+      date: slot.date,
+      start_slot: slot.start_slot,
+      end_slot: slot.end_slot,
+    });
+  }
+  clearFinalizedSlot() { this._send({ type: 'clear_finalized_slot' }); }
   leave() { this._closed = true; this._send({ type: 'leave' }); this._ws?.close(); }
   _send(data) { if (this._ws?.readyState === WebSocket.OPEN) this._ws.send(JSON.stringify(data)); }
   destroy() { this._closed = true; this._ws?.close(); }

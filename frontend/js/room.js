@@ -61,6 +61,9 @@ const calGrid      = document.getElementById('cal-grid');
 const backBtn      = document.getElementById('back-btn');
 const dayChipsEl   = document.getElementById('day-chips');
 const currentDayLabel  = document.getElementById('current-day-label');
+const finalizedSection = document.getElementById('finalized-section');
+const finalizedSlotEl  = document.getElementById('finalized-slot');
+const submissionStatusEl = document.getElementById('submission-status');
 const recsContainer    = document.getElementById('recommendations');
 const roomUrlInput     = document.getElementById('room-url-input');
 const copyBtn          = document.getElementById('copy-btn');
@@ -118,9 +121,26 @@ const calMonthLabel = document.getElementById('cal-month-label');
 // ── State ──
 let grid = null;
 let ws   = null;
-let serverState = { participants: {}, names: {}, recommended_slots: [], meta: {} };
+let serverState = {
+  participants: {},
+  names: {},
+  recommended_slots: [],
+  meta: {},
+  submission_status: null,
+  finalized_slot: null,
+};
 let currentDate = toISO(TODAY);
 let calMonthOffset = 0; // -1 to +6 relative to current month
+
+function escapeHTML(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
 
 function getDayView(participants, dateStr) {
   const result = {};
@@ -145,6 +165,21 @@ function formatDuration(mins) {
     return rest ? `${hours}시간 ${rest}분` : `${hours}시간`;
   }
   return `${mins}분`;
+}
+
+function namesPreview(people, emptyText = '없음') {
+  if (!people?.length) return emptyText;
+  return people.map((p) => escapeHTML(p.name || p)).join(', ');
+}
+
+function isSameSlot(a, b) {
+  return !!a && !!b && a.date === b.date && a.start_slot === b.start_slot && a.end_slot === b.end_slot;
+}
+
+function slotSetFromRange(slot) {
+  const slotSet = new Set();
+  for (let t = slot.start_slot; t < slot.end_slot; t++) slotSet.add(t);
+  return slotSet;
 }
 
 // ── Calendar nav helpers ──
@@ -194,6 +229,8 @@ function buildCalGrid(participants, recs) {
     const hasMe   = participants[userId]?.[iso]?.some(v => v === 1);
     const isToday = iso === toISO(TODAY);
     const isCurrent = iso === currentDate;
+    const finalized = serverState.finalized_slot;
+    const isFinalized = finalized?.date === iso;
     const topRec = recs.find(r => r.date === iso);
 
     const cell = document.createElement('div');
@@ -203,6 +240,7 @@ function buildCalGrid(participants, recs) {
     if (dow === 0) cell.classList.add('sun');
     if (isToday)   cell.classList.add('today');
     if (isCurrent) cell.classList.add('active');
+    if (isFinalized) cell.classList.add('finalized');
     if (hasMe)     cell.classList.add('has-me');
     if (cnt > 0) {
       cell.classList.add('has-data');
@@ -210,7 +248,10 @@ function buildCalGrid(participants, recs) {
     }
 
     let recHtml = '';
-    if (topRec) {
+    if (isFinalized) {
+      recHtml = `<span class="cal-cell-time">확정 ${finalized.start_time}~${finalized.end_time}</span>
+                 <span class="cal-cell-att">${finalized.attendance_count}/${Object.keys(serverState.names).length}명 가능</span>`;
+    } else if (topRec) {
       const mins = topRec.duration_slots * 30;
       const durStr = formatDuration(mins);
       recHtml = `<span class="cal-cell-time">${topRec.start_time}~${topRec.end_time}</span>
@@ -297,12 +338,77 @@ function switchDate(dateStr) {
 
 function highlightRecForDate(dateStr) {
   grid?.clearRecommended();
-  const match = serverState.recommended_slots.find((r) => r.date === dateStr);
+  const finalized = serverState.finalized_slot;
+  const match = finalized?.date === dateStr
+    ? finalized
+    : serverState.recommended_slots.find((r) => r.date === dateStr);
   if (match) {
-    const slotSet = new Set();
-    for (let t = match.start_slot; t < match.end_slot; t++) slotSet.add(t);
-    grid?.highlightRecommended(slotSet);
+    grid?.highlightRecommended(slotSetFromRange(match));
   }
+}
+
+function navigateToSlot(slot) {
+  showDetailView(slot.date);
+  grid?.highlightRecommended(slotSetFromRange(slot));
+}
+
+function renderSubmissionStatus(status) {
+  const total = status?.total_count || 0;
+  const submitted = status?.submitted_count || 0;
+  const pending = status?.pending_count || 0;
+
+  if (total === 0) {
+    submissionStatusEl.innerHTML = '<p class="no-recs">참여자 없음</p>';
+    return;
+  }
+
+  const pct = Math.round((submitted / total) * 100);
+  submissionStatusEl.innerHTML = `
+    <div class="status-summary">
+      <strong>${submitted}/${total}명 입력 완료</strong>
+      <span>${pending > 0 ? `${pending}명 대기` : '모두 입력'}</span>
+    </div>
+    <div class="submission-meter"><div style="width:${pct}%"></div></div>
+    <div class="people-block">
+      <span class="people-label">완료</span>
+      <span>${namesPreview(status.submitted, '아직 없음')}</span>
+    </div>
+    <div class="people-block">
+      <span class="people-label">대기</span>
+      <span>${namesPreview(status.pending, '없음')}</span>
+    </div>`;
+}
+
+function renderFinalizedSlot(slot) {
+  if (!slot) {
+    finalizedSection.hidden = true;
+    finalizedSlotEl.innerHTML = '';
+    return;
+  }
+
+  finalizedSection.hidden = false;
+  finalizedSlotEl.innerHTML = `
+    <div class="finalized-card">
+      <div class="finalized-time">${escapeHTML(slot.time_string)}</div>
+      <div class="finalized-meta">
+        ${slot.attendance_count}/${Object.keys(serverState.names).length}명 가능 · ${formatDuration(slot.duration_minutes)}
+      </div>
+      <div class="people-block">
+        <span class="people-label">가능</span>
+        <span>${namesPreview(slot.available, '없음')}</span>
+      </div>
+      <div class="people-block">
+        <span class="people-label">불가</span>
+        <span>${namesPreview(slot.unavailable, '없음')}</span>
+      </div>
+      <div class="finalized-actions">
+        <button class="btn-grid-action" id="view-finalized-btn">보기</button>
+        <button class="btn-grid-action danger" id="clear-finalized-btn">해제</button>
+      </div>
+    </div>`;
+
+  document.getElementById('view-finalized-btn').addEventListener('click', () => navigateToSlot(slot));
+  document.getElementById('clear-finalized-btn').addEventListener('click', () => ws?.clearFinalizedSlot());
 }
 
 // ── Recommendations ──
@@ -324,13 +430,6 @@ function renderRecommendations(recs, n) {
       dateMap.set(r.date, group);
     }
     dateMap.get(r.date).slots.push(r);
-  }
-
-  function navigateToSlot(r) {
-    showDetailView(r.date);
-    const slotSet = new Set();
-    for (let t = r.start_slot; t < r.end_slot; t++) slotSet.add(t);
-    grid?.highlightRecommended(slotSet);
   }
 
   for (const { date, slots } of byDate) {
@@ -395,14 +494,25 @@ function renderRecommendations(recs, n) {
       const durStr = formatDuration(mins);
       const needStr = formatDuration(r.meeting_duration_minutes || +(serverState.meta?.meeting_duration_minutes || 60));
       const card   = document.createElement('div');
-      card.className = `stack-card rec-card${r.date_rank === 1 ? ' top' : ''}`;
+      const isFinalized = isSameSlot(r, serverState.finalized_slot);
+      card.className = `stack-card rec-card${r.date_rank === 1 ? ' top' : ''}${isFinalized ? ' finalized-rec' : ''}`;
       card.innerHTML = `
         <div class="rec-header">
           <span class="rec-rank">#${r.date_rank}</span>
           <div class="rec-time">${r.start_time}~${r.end_time}</div>
+          <button class="btn-finalize" type="button">${isFinalized ? '확정됨' : '확정'}</button>
         </div>
         <div class="rec-meta">${r.attendance_count}/${n}명 (${pct}%) · ${durStr} 가능 · ${needStr} 필요</div>
+        <div class="rec-reason">
+          <div><strong>가능</strong><span>${namesPreview(r.available, '없음')}</span></div>
+          <div><strong>불가</strong><span>${namesPreview(r.unavailable, '없음')}</span></div>
+        </div>
         <div class="rec-bar"><div class="rec-bar-fill" style="width:${pct}%"></div></div>`;
+
+      card.querySelector('.btn-finalize').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!isFinalized) ws?.finalizeSlot(r);
+      });
 
       card.addEventListener('click', (e) => {
         if (!stack.classList.contains('expanded')) return;
@@ -423,12 +533,21 @@ function renderRecommendations(recs, n) {
 
 // ── WebSocket message handler ──
 function handleMessage(msg) {
-  const { type, participants = {}, names = {}, recommended_slots = [], meta = serverState.meta } = msg;
+  const {
+    type,
+    participants = {},
+    names = {},
+    recommended_slots = [],
+    meta = serverState.meta,
+    submission_status = serverState.submission_status,
+    finalized_slot = serverState.finalized_slot,
+  } = msg;
 
-  if (['init', 'state_update', 'participant_left'].includes(type)) {
-    serverState = { participants, names, recommended_slots, meta };
-    const n = Object.keys(participants).length;
-    participantCount.textContent = `참여자 ${n}명`;
+  if (['init', 'state_update', 'participant_left', 'finalized_slot_update'].includes(type)) {
+    serverState = { participants, names, recommended_slots, meta, submission_status, finalized_slot };
+    const total = submission_status?.total_count ?? Object.keys(names).length;
+    const submitted = submission_status?.submitted_count ?? Object.keys(participants).length;
+    participantCount.textContent = `참여자 ${total}명 · 입력 ${submitted}/${total}`;
 
     if (!calView.hidden) {
       buildCalGrid(participants, recommended_slots);
@@ -437,7 +556,9 @@ function handleMessage(msg) {
       grid?.updateAll(getDayView(participants, currentDate), names);
       highlightRecForDate(currentDate);
     }
-    renderRecommendations(recommended_slots, n);
+    renderSubmissionStatus(submission_status);
+    renderFinalizedSlot(finalized_slot);
+    renderRecommendations(recommended_slots, submitted);
   }
 }
 

@@ -3,7 +3,7 @@ import json
 import re
 import secrets
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import date as _date, datetime, timezone
 from pathlib import Path
 
 import redis.asyncio as aioredis
@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from algorithm import SLOT_MINUTES, SLOTS, find_best_day_time
+from algorithm import SLOT_MINUTES, SLOTS, date_label, find_best_day_time, slot_to_time
 from models import RoomCreate
 from redis_client import close_redis, get_redis
 
@@ -103,15 +103,149 @@ def _meeting_duration_slots(meta: dict) -> int:
     return max(1, min(SLOTS, (minutes + SLOT_MINUTES - 1) // SLOT_MINUTES))
 
 
+def _has_submission(days_data: dict[str, list[int]] | None) -> bool:
+    if not days_data:
+        return False
+    return any(isinstance(slots, list) and len(slots) == SLOTS for slots in days_data.values())
+
+
+def _person(user_id: str, names: dict[str, str]) -> dict:
+    return {"user_id": user_id, "name": names.get(user_id) or user_id[:8]}
+
+
+def _is_available_for_range(
+    days_data: dict[str, list[int]] | None,
+    date_str: str,
+    start_slot: int,
+    end_slot: int,
+) -> bool:
+    slots = (days_data or {}).get(date_str)
+    return bool(slots and len(slots) == SLOTS and all(slots[t] == 1 for t in range(start_slot, end_slot)))
+
+
+def _slot_people(
+    participants: dict[str, dict[str, list[int]]],
+    names: dict[str, str],
+    date_str: str,
+    start_slot: int,
+    end_slot: int,
+) -> dict:
+    available = []
+    unavailable = []
+    pending = []
+
+    for user_id in sorted(names, key=lambda uid: names.get(uid, "").casefold()):
+        person = _person(user_id, names)
+        submitted = _has_submission(participants.get(user_id))
+        if _is_available_for_range(participants.get(user_id), date_str, start_slot, end_slot):
+            available.append(person)
+        else:
+            unavailable.append(person)
+            if not submitted:
+                pending.append(person)
+
+    return {
+        "available": available,
+        "unavailable": unavailable,
+        "pending": pending,
+        "available_names": [p["name"] for p in available],
+        "unavailable_names": [p["name"] for p in unavailable],
+        "pending_names": [p["name"] for p in pending],
+    }
+
+
+def _submission_status(participants: dict[str, dict[str, list[int]]], names: dict[str, str]) -> dict:
+    submitted = []
+    pending = []
+
+    for user_id in sorted(names, key=lambda uid: names.get(uid, "").casefold()):
+        person = _person(user_id, names)
+        if _has_submission(participants.get(user_id)):
+            submitted.append(person)
+        else:
+            pending.append(person)
+
+    return {
+        "total_count": len(names),
+        "submitted_count": len(submitted),
+        "pending_count": len(pending),
+        "submitted": submitted,
+        "pending": pending,
+        "submitted_names": [p["name"] for p in submitted],
+        "pending_names": [p["name"] for p in pending],
+    }
+
+
+def _enrich_recommendations(
+    recs: list[dict],
+    participants: dict[str, dict[str, list[int]]],
+    names: dict[str, str],
+) -> list[dict]:
+    enriched = []
+    for rec in recs:
+        item = dict(rec)
+        item.update(_slot_people(participants, names, item["date"], item["start_slot"], item["end_slot"]))
+        enriched.append(item)
+    return enriched
+
+
+def _finalized_slot(meta: dict, participants: dict[str, dict[str, list[int]]], names: dict[str, str]) -> dict | None:
+    raw = meta.get("finalized_slot")
+    if not raw:
+        return None
+    try:
+        slot = json.loads(raw)
+        date_str = slot["date"]
+        start_slot = int(slot["start_slot"])
+        end_slot = int(slot["end_slot"])
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+    people = _slot_people(participants, names, date_str, start_slot, end_slot)
+    duration_slots = end_slot - start_slot
+    return {
+        **slot,
+        "date": date_str,
+        "start_slot": start_slot,
+        "end_slot": end_slot,
+        "start_time": slot_to_time(start_slot),
+        "end_time": slot_to_time(end_slot),
+        "time_string": f"{date_label(date_str)} {slot_to_time(start_slot)}~{slot_to_time(end_slot)}",
+        "duration_slots": duration_slots,
+        "duration_minutes": duration_slots * SLOT_MINUTES,
+        "attendance_count": len(people["available"]),
+        "attendance_ratio": round(len(people["available"]) / len(names), 2) if names else 0,
+        **people,
+    }
+
+
+def _parse_slot_range(date_str: str, start_slot, end_slot) -> tuple[str, int, int]:
+    if not _ISO_RE.match(date_str):
+        raise ValueError("Invalid date (expected YYYY-MM-DD)")
+    try:
+        _date.fromisoformat(date_str)
+        start = int(start_slot)
+        end = int(end_slot)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Invalid slot range") from exc
+    if start < 0 or end > SLOTS or start >= end:
+        raise ValueError(f"Invalid slot range (expected 0 <= start < end <= {SLOTS})")
+    return date_str, start, end
+
+
 async def _build_state(r, room_id: str, meta: dict | None = None) -> dict:
     participants = await _load_participants(r, room_id)
     names = await r.hgetall(f"room:{room_id}:names")
     if meta is None:
         meta = await r.hgetall(f"room:{room_id}:meta")
+    recs = find_best_day_time(participants, _meeting_duration_slots(meta))
     return {
+        "meta": meta,
         "participants": participants,
         "names": names,
-        "recommended_slots": find_best_day_time(participants, _meeting_duration_slots(meta)),
+        "recommended_slots": _enrich_recommendations(recs, participants, names),
+        "submission_status": _submission_status(participants, names),
+        "finalized_slot": _finalized_slot(meta, participants, names),
     }
 
 
@@ -215,7 +349,7 @@ async def ws_endpoint(ws: WebSocket, room_id: str, user_id: str, name: str = "")
                 pipe.expire(f"room:{room_id}:participants", ROOM_TTL)
                 await pipe.execute()
 
-                state = await _build_state(r, room_id, meta)
+                state = await _build_state(r, room_id)
                 await r.publish(
                     f"room:{room_id}:updates",
                     json.dumps({"type": "state_update", "updated_by": user_id, **state}),
@@ -224,12 +358,50 @@ async def ws_endpoint(ws: WebSocket, room_id: str, user_id: str, name: str = "")
             elif msg_type == "leave":
                 # Soft leave: keep slot data, drop name
                 await r.hdel(f"room:{room_id}:names", user_id)
-                state = await _build_state(r, room_id, meta)
+                state = await _build_state(r, room_id)
                 await r.publish(
                     f"room:{room_id}:updates",
                     json.dumps({"type": "participant_left", "user_id": user_id, **state}),
                 )
                 break
+
+            elif msg_type == "finalize_slot":
+                try:
+                    date_str, start_slot, end_slot = _parse_slot_range(
+                        msg.get("date", ""),
+                        msg.get("start_slot"),
+                        msg.get("end_slot"),
+                    )
+                except ValueError as exc:
+                    await ws.send_json({"type": "error", "message": str(exc)})
+                    continue
+
+                finalized = {
+                    "date": date_str,
+                    "start_slot": start_slot,
+                    "end_slot": end_slot,
+                    "finalized_by": user_id,
+                    "finalized_by_name": display_name,
+                    "finalized_at": datetime.now(timezone.utc).isoformat(),
+                }
+                await r.hset(f"room:{room_id}:meta", "finalized_slot", json.dumps(finalized))
+                await r.expire(f"room:{room_id}:meta", ROOM_TTL)
+
+                state = await _build_state(r, room_id)
+                await r.publish(
+                    f"room:{room_id}:updates",
+                    json.dumps({"type": "finalized_slot_update", "updated_by": user_id, **state}),
+                )
+
+            elif msg_type == "clear_finalized_slot":
+                await r.hdel(f"room:{room_id}:meta", "finalized_slot")
+                await r.expire(f"room:{room_id}:meta", ROOM_TTL)
+
+                state = await _build_state(r, room_id)
+                await r.publish(
+                    f"room:{room_id}:updates",
+                    json.dumps({"type": "finalized_slot_update", "updated_by": user_id, **state}),
+                )
 
     except WebSocketDisconnect:
         pass
