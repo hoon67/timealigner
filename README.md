@@ -14,6 +14,12 @@ The app serves the frontend and API from:
 http://localhost:8000
 ```
 
+Check the running server and storage backend:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/api/health
+```
+
 ## Docker
 
 ```powershell

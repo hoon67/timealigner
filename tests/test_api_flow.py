@@ -79,6 +79,14 @@ class ApiFlowTests(unittest.IsolatedAsyncioTestCase):
         result = await main.create_room(RoomCreate(**payload))
         return result["room_id"]
 
+    async def test_health_reports_current_app_and_storage_backend(self):
+        data = await main.health()
+
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["app"], "TimeAligner")
+        self.assertEqual(data["storage_backend"], "memory")
+        self.assertIn("started_at", data)
+
     async def start_listener(self):
         listener = asyncio.create_task(main._pubsub_listener())
         for _ in range(20):

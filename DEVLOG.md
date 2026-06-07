@@ -160,11 +160,17 @@
 6. **문서화** — README에 실행법, Docker, Redis 운영 옵션, 검증 명령 추가
 7. **브라우저 QA 상태** — Browser 플러그인 `iab` 세션과 로컬 Playwright/Selenium이 없어 실제 시각 QA는 미실행. 서버/API/문법/테스트 검증으로 대체
 
+### 세션 8
+1. **8000 포트 정리** — 오래된 서버 프로세스를 종료하고 현재 작업트리 코드로 `http://127.0.0.1:8000` 재기동. `/api/rooms/{id}` 응답에 `submission_status`/`finalized_slot` 포함 확인
+2. **서버 상태 확인 API** — `/api/health` 추가. `app`, `storage_backend`, `require_redis`, `started_at` 반환
+3. **favicon 404 정리** — `/favicon.ico`에 작은 SVG 응답을 추가해 브라우저 콘솔 404 노이즈 제거
+4. **브라우저 QA 체크리스트** — headless Chrome 기준 랜딩 → 방 생성 → 달력 → 날짜 상세 → 전체 선택 → 추천 생성 → 시간 확정 → 모바일 390px 랜딩/달력/상세 확인
+
 ---
 
 ## 최근 검증
 
-- `python -m unittest discover -s tests` — 15개 테스트 통과
+- `python -m unittest discover -s tests` — 16개 테스트 통과
 - `python -m py_compile backend\algorithm.py backend\main.py backend\models.py backend\store.py backend\redis_client.py` — Python 문법 확인
 - `node --check frontend\js\room.js`, `node --check frontend\js\ws.js`, `node --check frontend\js\index.js`, `node --check frontend\js\grid.js` — JS 파싱 확인
 - 별도 포트 실제 서버 WebSocket smoke test — fallback 스토어에서도 `state_update` 브로드캐스트 수신 확인

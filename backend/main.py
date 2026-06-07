@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import re
 import secrets
 from contextlib import asynccontextmanager
@@ -7,7 +8,7 @@ from datetime import date as _date, datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -19,6 +20,12 @@ ROOM_TTL = 60 * 60 * 24 * 90  # 90 days
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 _ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 DEFAULT_MEETING_DURATION_MINUTES = 60
+APP_STARTED_AT = datetime.now(timezone.utc).isoformat()
+FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<rect width="64" height="64" rx="12" fill="#1a0a2e"/>
+<path d="M16 18h32v8H36v30h-8V26H16z" fill="#fff"/>
+<circle cx="48" cy="48" r="8" fill="#ea580c"/>
+</svg>"""
 
 
 class ConnectionManager:
@@ -102,6 +109,22 @@ def _meeting_duration_slots(meta: dict) -> int:
     except (TypeError, ValueError):
         minutes = DEFAULT_MEETING_DURATION_MINUTES
     return max(1, min(SLOTS, (minutes + SLOT_MINUTES - 1) // SLOT_MINUTES))
+
+
+def _require_redis_enabled() -> bool:
+    return os.getenv("REQUIRE_REDIS", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _storage_backend_name(store) -> str:
+    module = type(store).__module__
+    name = type(store).__name__
+    if module.startswith("redis."):
+        return "redis"
+    if name == "SQLiteStore":
+        return "sqlite"
+    if name == "MemoryStore":
+        return "memory"
+    return name
 
 
 def _has_submission(days_data: dict[str, list[int]] | None) -> bool:
@@ -276,6 +299,28 @@ async def _remove_participant(r, room_id: str, user_id: str, meta: dict | None =
     pipe.hdel(f"room:{room_id}:names", user_id)
     await pipe.execute()
     return await _build_state(r, room_id, meta)
+
+
+@app.get("/api/health")
+async def health():
+    try:
+        r = await get_redis()
+        await r.ping()
+    except Exception as exc:
+        raise HTTPException(503, f"Storage unavailable: {exc}") from exc
+
+    return {
+        "ok": True,
+        "app": "TimeAligner",
+        "storage_backend": _storage_backend_name(r),
+        "require_redis": _require_redis_enabled(),
+        "started_at": APP_STARTED_AT,
+    }
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(content=FAVICON_SVG, media_type="image/svg+xml")
 
 
 @app.post("/api/rooms")
